@@ -1,6 +1,6 @@
 # AI Assistant 
 # Import libraries from CLI =>
-# pip install tkinter tkmacosx llama-cpp-python
+# pip install tkinter tkmacosx llama-cpp-python pypdf
 
 # Create a LLM with local GGUF model
 #import llm_model
@@ -16,9 +16,10 @@ import time
 # Threading for background tasks
 import threading, multiprocessing
 # Import better buttons for macOS
-from tkmacosx import Button, CircleButton
+from tkmacosx import Button
+# Use tooltips on buttons if needed
+from helper import ToolTip
 
-#llm = llm_model.LLM_Model(model_path="Dolphin3.0-Llama3.1-8B_Q5_K_M_T.gguf")
 # Determine the number of CPU cores available on the system
 num_cores = multiprocessing.cpu_count()
 # Set the number of threads for the LLM, leaving 2 cores free
@@ -45,7 +46,7 @@ llm = Llama(
 
 # Global variables --------------------------------------
 # Set a default font for the GUI
-DEFAULT_FONT = ("Helvetica", 16)
+DEFAULT_FONT = ("Helvetica", 22)
 # To track total tokens used
 total_tokens_used = 0
 
@@ -74,15 +75,22 @@ def extract_text_from_pdf():
         title="Select PDF file",
         filetypes=[("PDF Files", "*.pdf")]
     )
+
+    # If no file was selected, return
     if not file_path:
         return
     else:
         try:
+            # Read the PDF file object
             reader = PdfReader(file_path)
             text = ""
             for page in reader.pages:
+                # Extract text from each page
                 text += page.extract_text() + "\n"
             reader_text = text
+            # Disable button once a document has been loaded
+            upload_button.config(state=tk.DISABLED,text="Uploaded")
+            # Show message in console
             print(f"[PDF] Extracted {len(text)} characters from {file_path}")
         except Exception as e:
             print(f"[PDF Error] Could not extract text from {file_path}: {e}")
@@ -131,7 +139,7 @@ def send_message():
     # Let's disable the send button and entry box while we
     # wait for a response
     entry.config(state=tk.DISABLED)
-    send_button.config(state=tk.DISABLED)
+    send_button.config(state=tk.DISABLED, text="Sent")
     # Let our user know the model is processing the request
     timer_label.config(text="Thinking...")
 
@@ -155,6 +163,9 @@ def generate_response_threaded(full_prompt):
     threading.Thread(target=update_timer, args=(start_time,), daemon=True).start()
     
     try:
+        # Temporarily insert "Thinking..." on new line
+        chat_display.insert(tk.END, f"\nThinking...", "bot")
+
         # Now let's get the model's response
         # THIS IS IMPORTANT
         # This is sent to the model each time the user hits send
@@ -175,13 +186,11 @@ def generate_response_threaded(full_prompt):
         # Let's extract the response text from the response object
         response_text = response['choices'][0]['text'].strip()
 
-        # Queue the response text for the TTS
-        #if response_text:
-        #    print("[EMQ]", len(response_text), "chars")
-        #    tts_queue.put(response_text)
-
         # Calculate the total time taken for the response
         final_time = time.time() - start_time
+
+        # Remove the last line, i.e. temporary "Thinking..." statement
+        chat_display.delete("end-1c linestart", "end-1c lineend")
 
         # Now we need to update the GUI with the response and final time
         root.after(0, update_gui, response_text, final_time)
@@ -198,19 +207,23 @@ def generate_response_threaded(full_prompt):
 
 # Create a function to update the GUI after the response is done
 def update_gui(response_text, final_time):
-    #global is_tts_speaking
-    chat_display.insert(tk.END, f"({final_time:.2f} seconds)\n", "bot")
-    # Add the model's response to our output box
-    chat_display.insert(tk.END, f"{response_text}\n\n", "bot")
-    # Let's auto scroll to the bottom of the chat display
-    chat_display.see(tk.END)
+    try:
+        #global is_tts_speaking
+        chat_display.insert(tk.END, f"({final_time:.2f} seconds)\n", "bot")
+        # Add the model's response to our output box
+        chat_display.insert(tk.END, f"{response_text}\n\n", "bot")
+        # Let's auto scroll to the bottom of the chat display
+        chat_display.see(tk.END)
 
-    # Set the final time taken for the response on our timer label
-    timer_label.config(text=f"Response time: {final_time:.2f} seconds")
-
-    # Re-enable the entry box and send button
-    entry.config(state=tk.NORMAL)
-    send_button.config(state=tk.NORMAL)
+        # Set the final time taken for the response on our timer label
+        timer_label.config(text=f"Response time: {final_time:.2f} seconds")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        # Re-enable the upload, entry box, and send button
+        upload_button.config(state=tk.NORMAL, text="Upload")
+        entry.config(state=tk.NORMAL)
+        send_button.config(state=tk.NORMAL, text="Send")
 
 # Create a function to handle closing our app gracefully
 def on_closing():
@@ -268,21 +281,6 @@ entry_frame.columnconfigure(2, weight=0)
 
 # Interactive Area -------------------------------------
 
-# Grid Layout for responsiveness for our entry box
-#root.grid_columnconfigure(0, weight=0)
-# For our send button
-#root.grid_columnconfigure(1, weight=0)
-# For our exit button
-#root.grid_columnconfigure(2, weight=0)
-# For our image avatar
-#root.grid_rowconfigure(0, weight=0)
-# For our chat display
-#root.grid_rowconfigure(1, weight=1)
-# For our input area
-#root.grid_rowconfigure(2, weight=0)
-# Add a row for our timer label
-#root.grid_rowconfigure(3, weight=0)
-
 # Create a scrolled text box to display the widget
 chat_display = scrolledtext.ScrolledText(right_frame, wrap=tk.WORD, height=20, font=DEFAULT_FONT)
 # We want to span all three columns
@@ -303,13 +301,17 @@ chat_display.tag_configure("user",
 close_button = Button(form_controls, text="Close", font=DEFAULT_FONT, command=on_closing)
 close_button.grid(row=0, column=0, padx=5, pady=10, sticky="nesw")
 
-# FIXME: Add new chat button functionality here
+# FIXME: Add new chat button functionality here when a database is linked
 new_chat_button = Button(form_controls, text="New Chat", font=DEFAULT_FONT)
 new_chat_button.grid(row=0, column=1, padx=5, pady=10, sticky="nesw")
+# Let user know chat history will be implemented in future feature
+ToolTip(new_chat_button, "Will be used with implentation of chat history")
 
-# FIXME: Add document upload button functionality here
+# Upload button for .pdf document text extraction
 upload_button = Button(entry_frame, text="Upload", font=DEFAULT_FONT, command=extract_text_from_pdf)
 upload_button.grid(row=0, column=0, padx=5, pady=10, sticky="ew")
+# Let user know only .pdf files can be uploaded (at this time)
+ToolTip(upload_button, "Upload a .pdf document for text extraction")
 
 # Create an entry box for the user to type their prompt
 entry = tk.Entry(entry_frame, font=DEFAULT_FONT)
