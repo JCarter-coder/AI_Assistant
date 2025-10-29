@@ -5,10 +5,12 @@
 # Create a LLM with local GGUF model
 #import llm_model
 from llama_cpp import Llama
+# Import PDF extraction library
+from pypdf import PdfReader
 
 # Implement a simple GUI
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, filedialog
 # Time library for the timer
 import time
 # Threading for background tasks
@@ -50,6 +52,8 @@ total_tokens_used = 0
 # A flag to track if our model is generating a response
 is_generating = False
 
+# A string to hold uploaded PDF text
+reader_text = ""
 
 # Definitions -------------------------------------------
 
@@ -64,14 +68,43 @@ def update_timer(start_time):
         # Sleep for a short amount of time so our timer doesn't use too much CPU
         time.sleep(0.1)
 
+def extract_text_from_pdf():
+    global reader_text
+    file_path = filedialog.askopenfilename(
+        title="Select PDF file",
+        filetypes=[("PDF Files", "*.pdf")]
+    )
+    if not file_path:
+        return
+    else:
+        try:
+            reader = PdfReader(file_path)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            reader_text = text
+            print(f"[PDF] Extracted {len(text)} characters from {file_path}")
+        except Exception as e:
+            print(f"[PDF Error] Could not extract text from {file_path}: {e}")
+
 # Create a function to send the prompt to the model and get the response
 def send_message():
+    global reader_text
+    global is_generating
     # Check if the model is already generating a response
     # if it is, then ignore this new request
     if is_generating:
         # When you return it exits the function early
         return
     
+    # Get the text from the uploaded PDF
+    if reader_text:
+        pdf_text = reader_text
+        # Clear the reader_text after using it
+        reader_text = ""
+        # Prepend the PDF text to the user's prompt
+        entry.insert(0, f"PDF document:\n{pdf_text}\n\n")
+
     # Get the user's prompt from the input box
     user_input = entry.get()
     # Don't send empty prompts
@@ -266,7 +299,7 @@ chat_display.tag_configure("user",
 
 # Buttons and Input Area ---------------------------------
 
-# GUI close button functionality
+# GUI application close button
 close_button = Button(form_controls, text="Close", font=DEFAULT_FONT, command=on_closing)
 close_button.grid(row=0, column=0, padx=5, pady=10, sticky="nesw")
 
@@ -275,7 +308,7 @@ new_chat_button = Button(form_controls, text="New Chat", font=DEFAULT_FONT)
 new_chat_button.grid(row=0, column=1, padx=5, pady=10, sticky="nesw")
 
 # FIXME: Add document upload button functionality here
-upload_button = Button(entry_frame, text="Upload", font=DEFAULT_FONT)
+upload_button = Button(entry_frame, text="Upload", font=DEFAULT_FONT, command=extract_text_from_pdf)
 upload_button.grid(row=0, column=0, padx=5, pady=10, sticky="ew")
 
 # Create an entry box for the user to type their prompt
